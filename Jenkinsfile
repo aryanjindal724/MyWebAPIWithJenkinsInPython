@@ -1,31 +1,60 @@
 pipeline {
     agent any
     environment {
-        AZURE_CREDENTIALS = credentials('azure-service-principal')
+        AZURE_CREDENTIALS_ID = 'azure-service-principal'
+        RESOURCE_GROUP = 'myResourceGroup'
+        APP_SERVICE_NAME = 'myPythonAppAryan01'
     }
+
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                git 'https://github.com/aryanjindal724/MyWebAPIWithJenkinsInPython.git'
+                git branch: 'main', url: 'https://github.com/brijeshprajapati53/WebApplicationForJenkins.git'
             }
         }
-        stage('Build') {
+
+        stage('Set Up Python') {
             steps {
-                sh 'pip install -r requirements.txt'
+                bat 'python -m venv venv'
+                bat 'call venv\\Scripts\\activate && pip install -r requirements.txt'
             }
         }
-        stage('Publish') {
+
+       stage('Publish') {
             steps {
-                sh 'zip -r app.zip .'
+                bat '''
+                powershell Compress-Archive -Path * -DestinationPath app.zip -Force
+                '''
             }
         }
-        stage('Deploy to Azure') {
+
+        
+          stage('Deploy') {
             steps {
-                withCredentials([azureServicePrincipal('azure-service-principal')]) {
-                    sh 'az login --service-principal -u $AZURE_CREDENTIALS_USR -p $AZURE_CREDENTIALS_PSW --tenant $AZURE_CREDENTIALS_TEN'
-                    sh 'az webapp up --name myPythonAppAryan01 --resource-group myResourceGroup --runtime "PYTHON:3.9" --src-path .'
+                withCredentials([azureServicePrincipal(credentialsId: AZURE_CREDENTIALS_ID)]) {
+                    bat '''
+                    if exist publish (rmdir /s /q publish)
+                    mkdir publish
+
+                    :: Copy .py files and requirements.txt to publish folder
+                    for %%f in (*.py) do copy "%%f" publish\\
+                    if exist requirements.txt copy requirements.txt publish\\
+                    '''
+                    bat 'az login --service-principal -u %AZURE_CLIENT_ID% -p %AZURE_CLIENT_SECRET% --tenant %AZURE_TENANT_ID%'
+                    bat 'powershell Compress-Archive -Path ./publish/* -DestinationPath ./publish.zip -Force'
+                    bat 'az webapp deploy --resource-group %RESOURCE_GROUP% --name %APP_SERVICE_NAME% --src-path ./publish.zip --type zip'
                 }
             }
+        }
+    }
+
+
+    post {
+        success {
+            echo 'Deployment Successful!'
+        }
+        failure {
+            echo 'Deployment Failed!'
         }
     }
 }
